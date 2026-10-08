@@ -7,7 +7,11 @@ authors = [
     { name = "Akash Singhal", email = "akigupta131@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "datasets>=5.1.0",
+    "pandas>=3.0.6",
+    "pyvespa>=1.2.8",
+]
 
 [project.scripts]
 search = "search:main"
