@@ -2,38 +2,21 @@
 
 Run:  .venv/bin/python ui.py   then open http://localhost:8000
 
-The Vespa Cloud endpoint requires mTLS, so the browser can't call it directly;
-this tiny server holds the cert and proxies queries.
+Vespa Cloud requires mTLS, so the browser can't call it directly;
+this tiny server holds the cert and proxies queries (local Docker needs no cert).
 """
 
 import json
-import os
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from vespa.application import Vespa
+from config import connect_vespa
 
-# Load VESPA_ENDPOINT / VESPA_CERT_DIR from .env (lines look like `export KEY=value`)
-env_file = Path(__file__).parent / ".env"
-if env_file.exists():
-    for line in env_file.read_text().splitlines():
-        line = line.strip().removeprefix("export ")
-        if "=" in line and not line.startswith("#"):
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
-
-ENDPOINT = os.environ["VESPA_ENDPOINT"]
-CERT_DIR = Path(os.environ["VESPA_CERT_DIR"]).expanduser()
 PAGE_SIZE = 10
 SNIPPET_CHARS = 280
 
-app = Vespa(
-    ENDPOINT,
-    cert=str(CERT_DIR / "data-plane-public-cert.pem"),
-    key=str(CERT_DIR / "data-plane-private-key.pem"),
-)
+app = connect_vespa()  # local Docker or Vespa Cloud, per VESPA_MODE in .env
 
 
 def make_snippet(text: str, terms: list[str]) -> str:
