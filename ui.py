@@ -15,8 +15,17 @@ from urllib.parse import parse_qs, urlparse
 
 from vespa.application import Vespa
 
-ENDPOINT = os.environ.get("VESPA_ENDPOINT", "https://b4cdc477.a5b49224.z.vespa-app.cloud/")
-CERT_DIR = Path(os.environ.get("VESPA_CERT_DIR", "~/.vespa/akashsinghal.fineweb.default")).expanduser()
+# Load VESPA_ENDPOINT / VESPA_CERT_DIR from .env (lines look like `export KEY=value`)
+env_file = Path(__file__).parent / ".env"
+if env_file.exists():
+    for line in env_file.read_text().splitlines():
+        line = line.strip().removeprefix("export ")
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+ENDPOINT = os.environ["VESPA_ENDPOINT"]
+CERT_DIR = Path(os.environ["VESPA_CERT_DIR"]).expanduser()
 PAGE_SIZE = 10
 SNIPPET_CHARS = 280
 
