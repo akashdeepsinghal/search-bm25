@@ -52,8 +52,10 @@ def make_snippet(text: str, terms: list[str]) -> str:
 def search(q: str, page: int) -> dict:
     offset = (page - 1) * PAGE_SIZE
     response = app.query(
-        yql=f"select * from sources * where userQuery() limit {PAGE_SIZE} offset {offset}",
+        yql="select * from sources * where userQuery()",
         query=q,
+        hits=PAGE_SIZE,
+        offset=offset,
         type="weakAnd",
         timeout="5s",
     )
