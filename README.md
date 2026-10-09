@@ -48,6 +48,12 @@ python ui.py
 
 Open http://localhost:8000. It connects to Vespa according to `VESPA_MODE`. Hovering a result shows its full text on the right (windows at least 1250px wide), and clicking the logo goes back to the home page.
 
+## SafeSearch
+
+Each document gets an `adult` flag when it is fed, computed by `safety.py` (a weighted keyword score plus URL hints; tune `THRESHOLD` and the term lists there). The UI has a SafeSearch toggle, on by default, that adds `and adult = false` to the query. It is remembered in the URL and in the browser.
+
+It is a heuristic: it catches blatant pages but will miss some and occasionally flag health or news pages. Changing the rules means recomputing the flag, which needs a re-feed or a partial update of the `adult` field. The `adult` field must exist in the deployed schema before feeding.
+
 ## Notes
 
 - Never commit `.env` or the cert/key files.

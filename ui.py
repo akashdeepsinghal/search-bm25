@@ -32,10 +32,10 @@ def make_snippet(text: str, terms: list[str]) -> str:
     return ("… " if start else "") + snippet + (" …" if start + SNIPPET_CHARS < len(text) else "")
 
 
-def search(q: str, page: int) -> dict:
+def search(q: str, page: int, safe: bool = True) -> dict:
     offset = (page - 1) * PAGE_SIZE
     response = app.query(
-        yql="select * from sources * where userQuery()",
+        yql="select * from sources * where userQuery()" + (" and adult = false" if safe else ""),
         query=q,
         hits=PAGE_SIZE,
         offset=offset,
@@ -54,6 +54,7 @@ def search(q: str, page: int) -> dict:
                 "year": f.get("year"),
                 "dump": f.get("dump"),
                 "token_count": f.get("token_count"),
+                "relevance": hit.get("relevance"),
             }
         )
     total = response.json.get("root", {}).get("fields", {}).get("totalCount", len(results))
@@ -88,7 +89,9 @@ PAGE = r"""<!doctype html>
   .result a:hover { text-decoration:underline; }
   .result p { margin:3px 0 0; color:var(--muted); }
   .result mark { background:none; color:var(--fg); font-weight:700; }
-  .meta { color:var(--muted); font-size:12px; margin-top:2px; }
+  .meta { color:var(--muted); font-size:12px; margin-top:2px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; line-height:1.6;
+    color:var(--green); border:1px solid var(--green); white-space:nowrap; }
   nav { display:flex; gap:4px; margin-top:8px; flex-wrap:wrap; align-items:center; }
   nav a, nav span { min-width:36px; padding:8px 10px; text-align:center; border-radius:18px; font-size:15px; text-decoration:none; }
   nav a { color:var(--link); }
@@ -105,17 +108,35 @@ PAGE = r"""<!doctype html>
     #preview .pmeta { color:var(--muted); font-size:12px; margin-bottom:12px; }
     #preview .ptext { white-space:pre-wrap; word-break:break-word; line-height:1.6; }
   }
+  .safe { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; cursor:pointer; user-select:none; white-space:nowrap; }
+  .safe input { position:absolute; opacity:0; }
+  .safe .track { width:34px; height:18px; border-radius:9px; background:var(--line); position:relative; transition:background .15s; }
+  .safe .track::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:var(--bg); transition:left .15s; }
+  .safe input:checked + .track { background:var(--link); }
+  .safe input:checked + .track::after { left:18px; }
+  .safe input:focus-visible + .track { outline:2px solid var(--link); outline-offset:2px; }
+  header.home .safe { margin-top:4px; }
   .empty, .error { margin-top:24px; color:var(--muted); }
 </style></head>
 <body>
 <header id="head" class="home">
   <a class="logo" href="/">FineWeb</a>
   <form id="f"><input id="q" type="search" placeholder="Search text or paste a URL" autocomplete="off" autofocus></form>
+  <label class="safe" title="Hide adult results"><input id="safe" type="checkbox"><span class="track"></span>SafeSearch</label>
 </header>
 <main id="out"></main>
 <aside id="preview"></aside>
 <script>
 const $ = id => document.getElementById(id);
+
+// SafeSearch: URL param wins, then the saved preference, default on
+function initialSafe() {
+  const u = new URLSearchParams(location.search).get('safe');
+  if (u !== null) return u !== '0';
+  try { return localStorage.getItem('safe') !== '0'; } catch { return true; }
+}
+$('safe').checked = initialSafe();
+const safeFlag = () => $('safe').checked ? '1' : '0';
 const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -141,10 +162,16 @@ function showPreview(results, terms, i) {
   const x = results[i], el = $('preview');
   document.querySelectorAll('.result').forEach(r => r.classList.toggle('active', +r.dataset.i === i));
   el.innerHTML = '<div class="ptitle">' + esc(x.url) + '</div>' +
-    '<div class="pmeta">' + [x.year, x.dump, x.token_count ? x.token_count.toLocaleString() + ' tokens' : null].filter(Boolean).join(' · ') + '</div>' +
+    '<div class="meta" style="margin-bottom:12px">' + metaHtml(x) + '</div>' +
     '<div class="ptext">' + highlight(x.text, terms) + '</div>';
   el.scrollTop = 0;
   el.classList.add('on');
+}
+
+function metaHtml(x) {
+  const parts = [x.year, x.dump, x.token_count ? x.token_count.toLocaleString() + ' tokens' : null].filter(Boolean).join(' · ');
+  const badge = x.relevance == null ? '' : '<span class="badge" title="Vespa relevance score (bm25)">★ ' + x.relevance.toFixed(2) + '</span>';
+  return badge + (parts ? '<span>' + parts + '</span>' : '');
 }
 
 function prettyUrl(u) {
@@ -156,10 +183,10 @@ async function run(q, page) {
   $('head').classList.remove('home');
   $('q').value = q;
   $('out').innerHTML = '<div class="empty">Searching…</div>'; $('preview').classList.remove('on');
-  history.replaceState(null, '', '?q=' + encodeURIComponent(q) + '&page=' + page);
+  history.replaceState(null, '', '?q=' + encodeURIComponent(q) + '&page=' + page + '&safe=' + safeFlag());
   document.title = q + ' - FineWeb Search';
   try {
-    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&page=' + page);
+    const r = await fetch('/api/search?q=' + encodeURIComponent(q) + '&page=' + page + '&safe=' + safeFlag());
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     if (!d.results.length) { $('out').innerHTML = '<div class="empty">No results for <b>' + esc(q) + '</b>.</div>'; return; }
@@ -170,7 +197,7 @@ async function run(q, page) {
         '<div class="result" data-i="' + i + '"><div class="site">' + prettyUrl(x.url) + '</div>' +
         '<a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.url) + '</a>' +
         '<p>' + highlight(x.snippet, d.terms) + '</p>' +
-        '<div class="meta">' + [x.year, x.dump, x.token_count ? x.token_count.toLocaleString() + ' tokens' : null].filter(Boolean).join(' · ') + '</div></div>'
+        '<div class="meta">' + metaHtml(x) + '</div></div>'
       ).join('') +
       pager(page, pages);
     showPreview(d.results, d.terms, 0);
@@ -181,6 +208,11 @@ async function run(q, page) {
   }
 }
 
+$('safe').onchange = () => {
+  try { localStorage.setItem('safe', safeFlag()); } catch {}
+  const q = $('q').value.trim();
+  if (q) run(q, 1);
+};
 $('f').onsubmit = e => { e.preventDefault(); const q = $('q').value.trim(); if (q) run(q, 1); };
 const p = new URLSearchParams(location.search);
 if (p.get('q')) run(p.get('q'), Math.max(1, +p.get('page') || 1));
@@ -206,7 +238,8 @@ class Handler(BaseHTTPRequestHandler):
             q = params.get("q", [""])[0].strip()
             try:
                 page = max(1, int(params.get("page", ["1"])[0]))
-                payload, status = search(q, page), 200
+                safe = params.get("safe", ["1"])[0] != "0"
+                payload, status = search(q, page, safe), 200
             except Exception as e:  # surface Vespa/network errors to the UI
                 payload, status = {"error": str(e)}, 500
             self._send(status, json.dumps(payload).encode(), "application/json")
