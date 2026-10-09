@@ -67,6 +67,7 @@ def search(q: str, page: int) -> dict:
             {
                 "url": f.get("url", ""),
                 "snippet": make_snippet(f.get("text", ""), terms),
+                "text": f.get("text", ""),
                 "year": f.get("year"),
                 "dump": f.get("dump"),
                 "token_count": f.get("token_count"),
@@ -110,14 +111,26 @@ PAGE = r"""<!doctype html>
   nav a { color:var(--link); }
   nav a:hover { background:var(--line); }
   nav span.cur { background:var(--link); color:var(--bg); font-weight:700; }
+  .logo { color:inherit; text-decoration:none; }
+  .result { padding:6px 8px; margin-left:-8px; border-radius:8px; }
+  .result.active { background:rgba(128,134,139,.12); }
+  #preview { display:none; }
+  @media (min-width:1250px) {
+    #preview.on { display:block; position:fixed; top:96px; bottom:24px; right:24px; left:870px; overflow:auto;
+      border:1px solid var(--line); border-radius:12px; padding:16px 20px; }
+    #preview .ptitle { color:var(--link); font-size:16px; word-break:break-all; margin-bottom:4px; }
+    #preview .pmeta { color:var(--muted); font-size:12px; margin-bottom:12px; }
+    #preview .ptext { white-space:pre-wrap; word-break:break-word; line-height:1.6; }
+  }
   .empty, .error { margin-top:24px; color:var(--muted); }
 </style></head>
 <body>
 <header id="head" class="home">
-  <div class="logo">FineWeb</div>
+  <a class="logo" href="/">FineWeb</a>
   <form id="f"><input id="q" type="search" placeholder="Search text or paste a URL" autocomplete="off" autofocus></form>
 </header>
 <main id="out"></main>
+<aside id="preview"></aside>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -141,6 +154,16 @@ function pager(page, pages) {
   return h + '</nav>';
 }
 
+function showPreview(results, terms, i) {
+  const x = results[i], el = $('preview');
+  document.querySelectorAll('.result').forEach(r => r.classList.toggle('active', +r.dataset.i === i));
+  el.innerHTML = '<div class="ptitle">' + esc(x.url) + '</div>' +
+    '<div class="pmeta">' + [x.year, x.dump, x.token_count ? x.token_count.toLocaleString() + ' tokens' : null].filter(Boolean).join(' · ') + '</div>' +
+    '<div class="ptext">' + highlight(x.text, terms) + '</div>';
+  el.scrollTop = 0;
+  el.classList.add('on');
+}
+
 function prettyUrl(u) {
   try { const x = new URL(u); return esc(x.hostname + (x.pathname === '/' ? '' : x.pathname.replace(/\//g, ' › '))); }
   catch { return esc(u); }
@@ -149,7 +172,7 @@ function prettyUrl(u) {
 async function run(q, page) {
   $('head').classList.remove('home');
   $('q').value = q;
-  $('out').innerHTML = '<div class="empty">Searching…</div>';
+  $('out').innerHTML = '<div class="empty">Searching…</div>'; $('preview').classList.remove('on');
   history.replaceState(null, '', '?q=' + encodeURIComponent(q) + '&page=' + page);
   document.title = q + ' - FineWeb Search';
   try {
@@ -160,13 +183,15 @@ async function run(q, page) {
     const pages = Math.ceil(d.total / d.page_size);
     $('out').innerHTML =
       '<div class="stats">About ' + d.total.toLocaleString() + ' results</div>' +
-      d.results.map(x =>
-        '<div class="result"><div class="site">' + prettyUrl(x.url) + '</div>' +
+      d.results.map((x, i) =>
+        '<div class="result" data-i="' + i + '"><div class="site">' + prettyUrl(x.url) + '</div>' +
         '<a href="' + esc(x.url) + '" target="_blank" rel="noopener noreferrer">' + esc(x.url) + '</a>' +
         '<p>' + highlight(x.snippet, d.terms) + '</p>' +
         '<div class="meta">' + [x.year, x.dump, x.token_count ? x.token_count.toLocaleString() + ' tokens' : null].filter(Boolean).join(' · ') + '</div></div>'
       ).join('') +
       pager(page, pages);
+    showPreview(d.results, d.terms, 0);
+    $('out').querySelectorAll('.result').forEach(el => el.onmouseenter = () => showPreview(d.results, d.terms, +el.dataset.i));
     $('out').querySelectorAll('nav a').forEach(a => a.onclick = e => { e.preventDefault(); run(q, +a.dataset.p); window.scrollTo(0, 0); });
   } catch (e) {
     $('out').innerHTML = '<div class="error">Search failed: ' + esc(String(e.message || e)) + '</div>';
