@@ -26,10 +26,10 @@ def load_env(path: Path | str | None = None) -> None:
             os.environ[key.strip()] = value.strip().strip("\"'")
 
 
-def connect_vespa() -> Vespa:
-    """Return a Vespa client for the mode set in VESPA_MODE (`local` or `cloud`)."""
+def connect_vespa(mode: str | None = None) -> Vespa:
+    """Return a Vespa client for `mode` (`local` or `cloud`); defaults to VESPA_MODE from .env."""
     load_env()
-    mode = os.environ.get("VESPA_MODE", "local").lower()
+    mode = (mode or os.environ.get("VESPA_MODE", "local")).lower()
     if mode == "local":
         return Vespa(
             url=os.environ.get("VESPA_LOCAL_URL", "http://localhost"),
